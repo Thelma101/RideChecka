@@ -1,0 +1,40 @@
+{
+  "short_name": "RideChecka",
+  "name": "RideChecka — Compare Ride Prices",
+  "description": "Compare ride-hailing prices across 16+ services in Nigeria",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#16a34a",
+  "background_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "categories": ["transportation", "travel"],
+  "shortcuts": [
+    {
+      "name": "Compare Prices",
+      "short_name": "Compare",
+      "url": "/",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Favorites",
+      "short_name": "Favorites",
+      "url": "/favorites",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "History",
+      "short_name": "History",
+      "url": "/history",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ]
+}

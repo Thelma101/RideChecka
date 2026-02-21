@@ -1,0 +1,18 @@
+node_modules
+dist
+.env
+.env.local
+.env.*.local
+*.log
+*.tsbuildinfo
+.vite
+.DS_Store
+Thumbs.db
+
+# Strategic / confidential docs
+docs/strategic/
+*.md
+!README.md
+!ATTRIBUTIONS.md
+!CHANGELOG.md
+!guidelines/*.md
