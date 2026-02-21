@@ -72,7 +72,7 @@ export function CompareServices({ estimates, open, onOpenChange }: CompareServic
                 <SelectContent>
                   {estimates.map((e) => (
                     <SelectItem key={e.serviceId} value={e.serviceId} disabled={e.serviceId === serviceB}>
-                      {e.serviceName}
+                      {e.serviceName} — {e.vehicleType}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -89,7 +89,7 @@ export function CompareServices({ estimates, open, onOpenChange }: CompareServic
                 <SelectContent>
                   {estimates.map((e) => (
                     <SelectItem key={e.serviceId} value={e.serviceId} disabled={e.serviceId === serviceA}>
-                      {e.serviceName}
+                      {e.serviceName} — {e.vehicleType}
                     </SelectItem>
                   ))}
                 </SelectContent>

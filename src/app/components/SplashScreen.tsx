@@ -6,6 +6,10 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
   const [show, setShow] = useState(true);
 
   useEffect(() => {
+    // Remove the inline HTML splash now that the React splash has mounted
+    const inlineSplash = document.getElementById('inline-splash');
+    if (inlineSplash) inlineSplash.remove();
+
     const timer = setTimeout(() => {
       setShow(false);
       setTimeout(onComplete, 500);

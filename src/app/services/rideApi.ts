@@ -5,8 +5,10 @@ import {
   calculateSurge,
   getCityAdjustment,
   type FareModel,
+  type VehicleCategory,
 } from './fareModels';
 import { supabase, isSupabaseConfigured } from './supabase';
+import { getAverageActualFare, getReportCount } from './fareReports';
 
 // ── Helpers ─────────────────────────────────────────────────────
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,12 +30,22 @@ function toRad(deg: number): number {
   return deg * (Math.PI / 180);
 }
 
-/** Estimated travel time given distance, accounting for Nigerian traffic */
+/** Travel time multiplier by service type — bikes weave through traffic, buses stop */
+const SERVICE_TYPE_SPEED: Record<string, number> = {
+  bike: 0.70,  // 30% faster than cars
+  car: 1.0,    // baseline
+  bus: 1.30,   // 30% slower (stops, fixed routes)
+};
+
+/** Estimated travel time given distance and service type */
 function calculateEstimatedTime(
   distanceKm: number,
+  serviceType: 'car' | 'bike' | 'bus' = 'car',
 ): { text: string; minutes: number } {
   const avgSpeed = distanceKm > 15 ? 35 : 25; // km/h
-  const minutes = Math.max(5, Math.ceil((distanceKm / avgSpeed) * 60));
+  const baseMinutes = Math.max(5, Math.ceil((distanceKm / avgSpeed) * 60));
+  const multiplier = SERVICE_TYPE_SPEED[serviceType] ?? 1.0;
+  const minutes = Math.max(3, Math.round(baseMinutes * multiplier));
   if (minutes < 60) return { text: `${minutes} min`, minutes };
   const hrs = Math.floor(minutes / 60);
   const mins = minutes % 60;
@@ -58,9 +70,10 @@ function detectCity(address: string): string {
   return cities.find((c) => lower.includes(c)) || 'lagos';
 }
 
-// ── Price calculation per service ───────────────────────────────
+// ── Price calculation per service + vehicle category ────────────
 function calculateServicePrice(
   model: FareModel,
+  vehicle: VehicleCategory,
   distanceKm: number,
   travelMinutes: number,
   cityMultiplier: number,
@@ -74,7 +87,6 @@ function calculateServicePrice(
   confidence: number;
   source: 'model' | 'api' | 'crowdsourced' | 'hybrid';
 } {
-  const vehicle = model.vehicleTypes[0];
 
   // Core fare
   let price =
@@ -142,14 +154,24 @@ function calculateServicePrice(
   };
 }
 
+/** Route metadata returned alongside estimates */
+export interface RouteInfo {
+  distanceKm: number;
+  estimatedTime: string;
+  travelMinutes: number;
+}
+
 // ── Main pricing endpoint ───────────────────────────────────────
 export async function fetchPriceEstimates(
   pickup: Location,
   destination: Location,
-): Promise<PriceEstimate[]> {
-  const distanceKm = calculateDistance(pickup, destination);
+): Promise<{ estimates: PriceEstimate[]; routeInfo: RouteInfo }> {
+  // Haversine gives straight-line distance; Lagos roads add ~35% on top
+  const haversineKm = calculateDistance(pickup, destination);
+  const distanceKm = Math.round(haversineKm * 1.35 * 100) / 100;
+  // Use car baseline for the route-level ETA
   const { text: estimatedTime, minutes: travelMinutes } =
-    calculateEstimatedTime(distanceKm);
+    calculateEstimatedTime(distanceKm, 'car');
 
   const city = detectCity(pickup.address) || detectCity(destination.address);
   const cityMultiplier = getCityAdjustment(city);
@@ -184,49 +206,94 @@ export async function fetchPriceEstimates(
   // Small artificial delay so UI shows the loading state naturally
   await delay(150 + Math.random() * 250);
 
-  const estimates: PriceEstimate[] = FARE_MODELS.map((model) => {
+  const estimates: PriceEstimate[] = FARE_MODELS.flatMap((model) => {
     const hasRemoteOverride = !!remoteFareOverrides?.[model.serviceId];
     const m = hasRemoteOverride
       ? ({ ...model, ...remoteFareOverrides![model.serviceId] } as FareModel)
       : model;
 
-    const { price, priceLow, priceHigh, vehicleType, surge, discount, confidence, source } =
-      calculateServicePrice(m, distanceKm, travelMinutes, cityMultiplier);
+    // Per-service travel time based on service type (bike/car/bus)
+    const serviceEta = calculateEstimatedTime(distanceKm, m.serviceType);
 
-    return {
-      serviceId: model.serviceId,
-      serviceName: model.name,
-      logo: model.logo,
-      color: model.color,
-      price,
-      priceLow,
-      priceHigh,
-      currency: 'NGN',
-      estimatedTime,
-      vehicleType,
-      surge,
-      features: model.features,
-      discount,
-      confidence,
-      source: hasRemoteOverride ? ('hybrid' as const) : source,
-      reportCount: 0, // Will be populated from Supabase fare_reports later
-      lastCalibrated: model.lastCalibrated,
-      deepLink: model.deepLink
-        ? model.deepLink
-            .replace('{plat}', String(pickup.lat))
-            .replace('{plng}', String(pickup.lng))
-            .replace('{dlat}', String(destination.lat))
-            .replace('{dlng}', String(destination.lng))
-        : undefined,
-      webUrl: model.webUrl || undefined,
-      playStore: model.playStore
-        ? `https://play.google.com/store/apps/details?id=${model.playStore}`
-        : undefined,
-      appStore: model.appStore
-        ? `https://apps.apple.com/app/${model.appStore}`
-        : undefined,
-    };
+    return m.vehicleTypes.map((vehicle) => {
+      const { price, priceLow, priceHigh, vehicleType, surge, discount, confidence, source } =
+        calculateServicePrice(m, vehicle, distanceKm, serviceEta.minutes, cityMultiplier);
+
+      // Create a unique id: e.g. "uber-uberx", "uber-uber_comfort"
+      const vehicleSlug = vehicle.type.toLowerCase().replace(/\s+/g, '_');
+      const uniqueId = `${model.serviceId}-${vehicleSlug}`;
+
+      return {
+        serviceId: uniqueId,
+        serviceName: model.name,
+        logo: model.logo,
+        color: model.color,
+        price,
+        priceLow,
+        priceHigh,
+        currency: 'NGN',
+        estimatedTime: serviceEta.text,
+        vehicleType,
+        surge,
+        features: model.features,
+        discount,
+        confidence,
+        source: hasRemoteOverride ? ('hybrid' as const) : source,
+        reportCount: 0,
+        lastCalibrated: model.lastCalibrated,
+        deepLink: model.deepLink
+          ? model.deepLink
+              .replace('{plat}', String(pickup.lat))
+              .replace('{plng}', String(pickup.lng))
+              .replace('{dlat}', String(destination.lat))
+              .replace('{dlng}', String(destination.lng))
+          : undefined,
+        webUrl: model.webUrl || undefined,
+        playStore: model.playStore
+          ? `https://play.google.com/store/apps/details?id=${model.playStore}`
+          : undefined,
+        appStore: model.appStore
+          ? `https://apps.apple.com/app/${model.appStore}`
+          : undefined,
+      };
+    });
   });
+
+  // ── Phase 3: Community report calibration ──────────────────────
+  // Blend community-reported fares into model estimates:
+  //   - If ≥3 reports exist within 2 km, weight community avg at 40%
+  //   - If 1-2 reports, weight at 20%
+  //   - Boost confidence score based on report count
+  const calibrationPromises = estimates.map(async (est) => {
+    try {
+      const baseId = est.serviceId.split('-')[0];
+      const [avgResult, count] = await Promise.all([
+        getAverageActualFare(baseId, pickup.lat, pickup.lng, destination.lat, destination.lng, 2),
+        getReportCount(baseId, pickup.lat, pickup.lng, destination.lat, destination.lng, 2),
+      ]);
+
+      est.reportCount = count;
+
+      if (avgResult && avgResult.count >= 1) {
+        const communityAvg = avgResult.average;
+        // Weight: 40% community if ≥3 reports, 20% if 1-2
+        const communityWeight = avgResult.count >= 3 ? 0.40 : 0.20;
+        const modelWeight = 1 - communityWeight;
+
+        est.price = Math.round(est.price * modelWeight + communityAvg * communityWeight);
+        est.priceLow = Math.round(est.priceLow * modelWeight + (communityAvg * 0.85) * communityWeight);
+        est.priceHigh = Math.round(est.priceHigh * modelWeight + (communityAvg * 1.15) * communityWeight);
+
+        // Confidence boost: more reports = higher confidence (up to +20)
+        const boost = Math.min(20, avgResult.count * 4);
+        est.confidence = Math.min(95, est.confidence + boost);
+        est.source = avgResult.count >= 3 ? 'crowdsourced' : 'hybrid';
+      }
+    } catch {
+      // Report lookup failed — use model estimate as-is
+    }
+  });
+  await Promise.all(calibrationPromises);
 
   // Persist the search to Supabase (fire & forget)
   if (isSupabaseConfigured() && supabase) {
@@ -240,14 +307,17 @@ export async function fetchPriceEstimates(
         dest_lat: destination.lat,
         dest_lng: destination.lng,
         distance_km: Math.round(distanceKm * 100) / 100,
-        cheapest_service: estimates[0]?.serviceId,
+        cheapest_service: estimates[0]?.serviceId?.split('-')[0],
         cheapest_price: estimates[0]?.price,
       })
       .then(() => {});
   }
 
   // Sort cheapest first
-  return estimates.sort((a, b) => a.price - b.price);
+  return {
+    estimates: estimates.sort((a, b) => a.price - b.price),
+    routeInfo: { distanceKm, estimatedTime, travelMinutes },
+  };
 }
 
 // ── Geocoding (unchanged — Nominatim + fallback) ────────────────

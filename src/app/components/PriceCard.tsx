@@ -1,12 +1,14 @@
-// Price card — clean monochrome design with price ranges + confidence
+// Price card — clean monochrome design with vehicle tier selector + confidence
+import { useState, useMemo } from 'react';
 import { PriceEstimate } from '../types';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { Clock, TrendingUp, Tag, ExternalLink, Star, ShieldCheck, Info } from 'lucide-react';
+import { Clock, TrendingUp, Tag, ExternalLink, Star, Info, ChevronDown } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface PriceCardProps {
-  estimate: PriceEstimate;
+  /** All vehicle-tier estimates for this service (e.g. UberX, Priority, Select, XL) */
+  estimates: PriceEstimate[];
   isCheapest?: boolean;
   isFastest?: boolean;
   onReportFare?: (estimate: PriceEstimate) => void;
@@ -25,14 +27,21 @@ function getConfidenceInfo(confidence: number): { label: string; colorClass: str
   return { label: 'Low confidence', colorClass: 'text-orange-500', dotColor: 'bg-orange-500' };
 }
 
-export function PriceCard({ estimate, isCheapest, isFastest, onReportFare }: PriceCardProps) {
+export function PriceCard({ estimates, isCheapest, isFastest, onReportFare }: PriceCardProps) {
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const estimate = estimates[selectedIdx] ?? estimates[0];
+  const hasMultipleTiers = estimates.length > 1;
+
   const finalPrice = estimate.discount
     ? estimate.price - estimate.discount
     : estimate.price;
 
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
-  const rating = getServiceRating(estimate.serviceId);
+  const baseServiceId = estimate.serviceId.split('-')[0];
+  const rating = getServiceRating(baseServiceId);
   const confidenceInfo = getConfidenceInfo(estimate.confidence);
 
   const handleBook = () => {
@@ -72,14 +81,66 @@ export function PriceCard({ estimate, isCheapest, isFastest, onReportFare }: Pri
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <p className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{estimate.vehicleType}</p>
-                <span className={`text-[10px] ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
+
+              {/* Vehicle tier selector */}
+              {hasMultipleTiers ? (
+                <div className="relative mt-0.5">
+                  <button
+                    onClick={() => setDropdownOpen(!dropdownOpen)}
+                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors ${
+                      isDark
+                        ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>{estimate.vehicleType}</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {dropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} />
+                      <div className={`absolute top-full left-0 mt-1 z-20 min-w-[180px] rounded-lg border shadow-lg py-1 ${
+                        isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                      }`}>
+                        {estimates.map((est, idx) => {
+                          const tierPrice = est.discount ? est.price - est.discount : est.price;
+                          return (
+                            <button
+                              key={est.serviceId}
+                              onClick={() => { setSelectedIdx(idx); setDropdownOpen(false); }}
+                              className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors ${
+                                idx === selectedIdx
+                                  ? (isDark ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900')
+                                  : (isDark ? 'text-gray-300 hover:bg-gray-700/50' : 'text-gray-600 hover:bg-gray-50')
+                              }`}
+                            >
+                              <span className="font-medium">{est.vehicleType}</span>
+                              <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                                ₦{tierPrice.toLocaleString()}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <p className={`text-xs mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{estimate.vehicleType}</p>
+              )}
+
+              <div className="flex items-center gap-2 mt-1">
                 <div className="flex items-center gap-0.5">
                   <Star className={`w-3 h-3 ${isDark ? 'fill-gray-400 text-gray-400' : 'fill-gray-400 text-gray-400'}`} />
                   <span className={`text-[11px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{rating.toFixed(1)}</span>
                 </div>
+                {hasMultipleTiers && (
+                  <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-300'}`}>
+                    · {estimates.length} tiers
+                  </span>
+                )}
               </div>
+
               {estimate.features && estimate.features.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {estimate.features.slice(0, 3).map((feature) => (

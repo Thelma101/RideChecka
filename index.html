@@ -16,7 +16,14 @@
     <title>RideChecka — Compare Ride Prices</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Inline splash – shown instantly while JS bundle loads -->
+      <div id="inline-splash" style="position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#16a34a,#15803d,#065f46);">
+        <div style="width:96px;height:96px;border-radius:24px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 25px 50px rgba(0,0,0,.25);margin-bottom:32px;font-size:48px;">🚗</div>
+        <div style="color:#fff;font-size:28px;font-weight:700;letter-spacing:-0.02em;">RideChecka</div>
+        <div style="color:#bbf7d0;font-size:14px;margin-top:8px;">Compare. Save. Ride Smart.</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {

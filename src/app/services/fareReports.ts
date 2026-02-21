@@ -34,12 +34,12 @@ export async function submitFareReport(
   note?: string,
 ): Promise<{ success: boolean; error?: string }> {
   const report: FareReport = {
-    serviceId: estimate.serviceId,
+    serviceId: estimate.serviceId.split('-')[0], // Use base service ID for grouping
     pickupLat: pickup.lat,
     pickupLng: pickup.lng,
     destLat: destination.lat,
     destLng: destination.lng,
-    distanceKm: 0, // Will be calculated on backend or attached from search
+    distanceKm: 0, // Computed from coordinates in getAverageActualFare
     actualFare,
     estimatedFare: estimate.price,
     note,

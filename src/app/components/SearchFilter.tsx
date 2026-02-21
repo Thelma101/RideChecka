@@ -1,5 +1,5 @@
 // Advanced search and filter drawer for results
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerFooter } from './ui/drawer';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -98,7 +98,8 @@ export function SearchFilter({ estimates, onFilter, open, onOpenChange }: Search
     if (filters.localOnly) {
       filtered = filtered.filter(e => {
         const localServices = ['gokada', 'rida', 'oride', 'max', 'safeboda', 'lagride'];
-        return localServices.includes(e.serviceId);
+        const baseId = e.serviceId.split('-')[0];
+        return localServices.includes(baseId);
       });
     }
 

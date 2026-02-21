@@ -1,11 +1,29 @@
+# RideChecka
 
-  # Ride Price Comparison App
+Compare ride-hailing prices across Uber, Bolt, inDrive, Rida and more in Nigeria. Get real-time fare estimates, community-reported pricing, and deep links to book directly.
 
-  This is a code bundle for Ride Price Comparison App. The original project is available at https://www.figma.com/design/Ndr2kYU5AbHfENnSY7QfGl/Ride-Price-Comparison-App.
+## Features
 
-  ## Running the code
+- **Multi-service price comparison** — Uber, Bolt, inDrive, Rida, Oride and more
+- **Community fare calibration** — crowdsourced reports improve accuracy
+- **Per-service ETAs** — bikes, cars and buses with realistic travel times
+- **Offline support** — cached results via service worker
+- **Shareable routes** — URL-persisted searches, WhatsApp/email share
+- **Dark mode** — system-aware theming
 
-  Run `npm i` to install the dependencies.
+## Getting Started
 
-  Run `npm run dev` to start the development server.
-  
+```bash
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+## Tech Stack
+
+- React 19 + TypeScript
+- Vite
+- Tailwind CSS
+- Supabase (optional — fare reports & analytics)
+- Nominatim / Photon geocoding

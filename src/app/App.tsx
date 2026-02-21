@@ -19,11 +19,17 @@ function AppInner() {
   }
 
   const [showSplash, setShowSplash] = useState(true);
+  const [appReady, setAppReady] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding);
   const { resolvedTheme } = useTheme();
 
   const handleSplashComplete = useCallback(() => {
+    // Remove the inline HTML splash (from index.html) if still present
+    const inlineSplash = document.getElementById('inline-splash');
+    if (inlineSplash) inlineSplash.remove();
     setShowSplash(false);
+    // Small delay before mounting the router so the exit animation finishes
+    setTimeout(() => setAppReady(true), 80);
   }, []);
 
   const handleOnboardingComplete = useCallback(() => {
@@ -41,7 +47,7 @@ function AppInner() {
         )}
       </AnimatePresence>
       <ConnectivityIndicator />
-      <RouterProvider router={router} />
+      {appReady && <RouterProvider router={router} />}
       <Toaster
         position="top-center"
         theme={resolvedTheme}

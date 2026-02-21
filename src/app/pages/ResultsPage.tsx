@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { PriceEstimate, Location } from '../types';
-import { fetchPriceEstimates } from '../services/rideApi';
+import { fetchPriceEstimates, RouteInfo } from '../services/rideApi';
 import { saveSearchToHistory, saveFavorite, isFavorite, cacheRoute, getCachedRoute } from '../services/storage';
 import { t } from '../utils/i18n';
 import { getLanguage } from '../services/storage';
@@ -50,6 +50,7 @@ export function ResultsPage() {
   }, [stateData, searchParams]);
 
   const [estimates, setEstimates] = useState<PriceEstimate[]>([]);
+  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [filteredEstimates, setFilteredEstimates] = useState<PriceEstimate[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,8 +90,9 @@ export function ResultsPage() {
         setIsOffline(true);
       }
 
-      const data = await fetchPriceEstimates(pickup, destination);
+      const { estimates: data, routeInfo: info } = await fetchPriceEstimates(pickup, destination);
       setEstimates(data);
+      setRouteInfo(info);
       setIsOffline(false);
 
       const search = saveSearchToHistory({
@@ -153,13 +155,31 @@ export function ResultsPage() {
   });
 
   const cheapestPrice = estimates.length > 0 ? Math.min(...estimates.map(e => e.price)) : 0;
-  const fastestTime = estimates.length > 0 ? estimates.reduce((fastest, e) => {
+
+  const fastestTime = useMemo(() => {
+    if (estimates.length === 0) return null;
     const parseTime = (time: string) => {
       const match = time.match(/(\d+)/);
       return match ? parseInt(match[1]) : 999;
     };
-    return parseTime(e.estimatedTime) < parseTime(fastest.estimatedTime) ? e : fastest;
-  }, estimates[0]) : null;
+    return estimates.reduce((fastest, e) => (
+      parseTime(e.estimatedTime) < parseTime(fastest.estimatedTime) ? e : fastest
+    ), estimates[0]);
+  }, [estimates]);
+
+  // Find the single fastest service — when tied, pick the cheapest among them
+  const fastestServiceId = useMemo(() => {
+    if (estimates.length === 0) return null;
+    const parseTime = (time: string) => {
+      const match = time.match(/(\d+)/);
+      return match ? parseInt(match[1]) : 999;
+    };
+    const minTime = Math.min(...estimates.map(e => parseTime(e.estimatedTime)));
+    const tied = estimates.filter(e => parseTime(e.estimatedTime) === minTime);
+    // Among tied services, pick the cheapest one's base service ID
+    const winner = tied.reduce((best, e) => (e.price < best.price ? e : best), tied[0]);
+    return winner.serviceId.split('-')[0];
+  }, [estimates]);
 
   const isFav = pickup && destination && isFavorite(pickup.address, destination.address);
   const isFiltered = filteredEstimates !== null;
@@ -505,6 +525,34 @@ export function ResultsPage() {
                 </div>
               </div>
 
+              {/* Route distance & travel time */}
+              {routeInfo && (
+                <div className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-xs ${
+                  isDark ? 'bg-gray-900 border border-gray-800' : 'bg-gray-50 border border-gray-200'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${isDark ? 'bg-green-500' : 'bg-green-500'}`} />
+                      <span className={isDark ? 'text-gray-300' : 'text-gray-700'} style={{ fontWeight: 500 }}>
+                        {routeInfo.distanceKm.toFixed(1)} km
+                      </span>
+                    </div>
+                    <span className={isDark ? 'text-gray-600' : 'text-gray-300'}>·</span>
+                    <div className="flex items-center gap-1">
+                      <Clock className={`w-3 h-3 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
+                      <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                        ~{routeInfo.travelMinutes} min drive
+                      </span>
+                    </div>
+                  </div>
+                  {isOffline && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      isDark ? 'bg-yellow-900/30 text-yellow-400' : 'bg-yellow-100 text-yellow-700'
+                    }`}>Cached</span>
+                  )}
+                </div>
+              )}
+
               {/* Price cards — responsive grid */}
               <DataTransparencyBanner
                 serviceCount={sortedEstimates.length}
@@ -517,21 +565,39 @@ export function ResultsPage() {
                 isOnline={!isOffline}
               />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                {sortedEstimates.map((estimate, index) => (
-                  <motion.div
-                    key={estimate.serviceId}
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.05 + index * 0.04 }}
-                  >
-                    <PriceCard
-                      estimate={estimate}
-                      isCheapest={estimate.price === cheapestPrice}
-                      isFastest={estimate.estimatedTime === fastestTime?.estimatedTime}
-                      onReportFare={(est) => setReportingEstimate(est)}
-                    />
-                  </motion.div>
-                ))}
+                {(() => {
+                  // Group sorted estimates by base service (e.g. uber, bolt)
+                  const grouped: { key: string; estimates: PriceEstimate[] }[] = [];
+                  const seen = new Set<string>();
+                  for (const est of sortedEstimates) {
+                    const base = est.serviceId.split('-')[0];
+                    if (!seen.has(base)) {
+                      seen.add(base);
+                      grouped.push({ key: base, estimates: sortedEstimates.filter(e => e.serviceId.split('-')[0] === base) });
+                    }
+                  }
+                  // Sort groups by their cheapest tier
+                  grouped.sort((a, b) => Math.min(...a.estimates.map(e => e.price)) - Math.min(...b.estimates.map(e => e.price)));
+
+                  return grouped.map((group, index) => {
+                    const groupCheapest = Math.min(...group.estimates.map(e => e.price));
+                    return (
+                      <motion.div
+                        key={group.key}
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.05 + index * 0.04 }}
+                      >
+                        <PriceCard
+                          estimates={group.estimates}
+                          isCheapest={groupCheapest === cheapestPrice}
+                          isFastest={group.key === fastestServiceId}
+                          onReportFare={(est) => setReportingEstimate(est)}
+                        />
+                      </motion.div>
+                    );
+                  });
+                })()}
               </div>
             </>
           )}
