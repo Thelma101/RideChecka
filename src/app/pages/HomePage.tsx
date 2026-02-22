@@ -62,7 +62,6 @@ export function HomePage() {
 
   return (
     <div className={`min-h-full ${isDark ? 'bg-gray-950' : 'bg-white'}`}>
-      {/* Hero + Form — single seamless section */}
       <div className="px-6 pt-14 pb-10 md:pt-12 md:pb-8 max-w-2xl">
         <motion.div
           initial={{ y: 10, opacity: 0 }}
